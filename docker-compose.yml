@@ -1,0 +1,12 @@
+services:
+  monitor:
+    build: .
+    container_name: meetify-monitor
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+    env_file: .env
+    environment:
+      - DB_PATH=/app/data/monitor.db

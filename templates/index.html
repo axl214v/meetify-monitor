@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="refresh" content="60">
+<title>{{ .SiteName }} Status</title>
+<style>
+  :root {
+    --bg:      #020c1a;
+    --surface: #081828;
+    --surface-2: #0d2040;
+    --border:  rgba(37,99,235,0.15);
+    --text:    #e8f0fe;
+    --text-2:  #7a96be;
+    --accent:  #2563eb;
+    --accent-2:#0ea5e9;
+    --green:   #22c55e;
+    --red:     #ef4444;
+    --gray:    #1c2c45;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, 'Segoe UI', Outfit, system-ui, sans-serif;
+    min-height: 100vh;
+    padding: 48px 16px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  .header { text-align: center; margin-bottom: 32px; }
+  .header h1 { font-size: 22px; font-weight: 600; color: var(--text-2); letter-spacing: 0.3px; }
+
+  .status-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    text-align: center;
+    margin-bottom: 24px;
+  }
+  .status-dot {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    margin-right: 8px;
+  }
+  .status-up   .status-dot { background: var(--green); box-shadow: 0 0 12px var(--green); }
+  .status-down .status-dot { background: var(--red);   box-shadow: 0 0 12px var(--red); }
+  .status-text { font-size: 20px; font-weight: 600; }
+  .status-up   .status-text { color: var(--green); }
+  .status-down .status-text { color: var(--red); }
+  .status-meta { margin-top: 8px; font-size: 13px; color: var(--text-2); }
+
+  .uptime-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .uptime-box {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+  }
+  .uptime-box .pct { font-size: 22px; font-weight: 700; color: var(--accent-2); }
+  .uptime-box .label { font-size: 12px; color: var(--text-2); margin-top: 4px; }
+
+  .timeline-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 24px;
+  }
+  .timeline-card h2 { font-size: 13px; color: var(--text-2); margin-bottom: 12px; font-weight: 500; }
+  .timeline {
+    display: flex;
+    gap: 2px;
+    height: 36px;
+  }
+  .timeline .day {
+    flex: 1;
+    border-radius: 2px;
+    background: var(--gray);
+  }
+  .timeline .day.up    { background: var(--green); }
+  .timeline .day.issue { background: var(--red); }
+  .timeline-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-2);
+    margin-top: 6px;
+  }
+
+  .incidents h2 { font-size: 13px; color: var(--text-2); margin-bottom: 12px; font-weight: 500; }
+  .incident-list { display: flex; flex-direction: column; gap: 8px; }
+  .incident {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+  }
+  .incident .when { color: var(--text); }
+  .incident .dur   { color: var(--text-2); font-family: monospace; }
+  .incident .dur.ongoing { color: var(--red); }
+  .empty { text-align: center; color: var(--text-2); font-size: 13px; padding: 24px 0; }
+
+  footer { text-align: center; margin-top: 32px; font-size: 11px; color: var(--text-2); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header"><h1>{{ .SiteName }} Status</h1></div>
+
+  <div class="status-card {{ if .IsUp }}status-up{{ else }}status-down{{ end }}">
+    <span class="status-dot"></span>
+    <span class="status-text">{{ if .IsUp }}Operational{{ else }}Down{{ end }}</span>
+    <div class="status-meta">
+      Last checked {{ ago .LastChecked }} &middot; {{ .ResponseMs }}ms response
+    </div>
+  </div>
+
+  <div class="uptime-row">
+    {{ range .UptimeStats }}
+    <div class="uptime-box">
+      <div class="pct">{{ printf "%.2f" .Pct }}%</div>
+      <div class="label">{{ .Period }}</div>
+    </div>
+    {{ end }}
+  </div>
+
+  <div class="timeline-card">
+    <h2>90-day history</h2>
+    <div class="timeline">
+      {{ range .DailyStatus }}
+      <div class="day {{ if .HasIssue }}issue{{ else if .AllUp }}up{{ end }}" title="{{ .Date }}"></div>
+      {{ end }}
+    </div>
+    <div class="timeline-labels">
+      <span>90 days ago</span>
+      <span>today</span>
+    </div>
+  </div>
+
+  <div class="incidents">
+    <h2>Incidents</h2>
+    {{ if .Incidents }}
+    <div class="incident-list">
+      {{ range .Incidents }}
+      <div class="incident">
+        <span class="when">⬇ {{ fmtTime .StartedAt }}</span>
+        <span class="dur {{ if not .ResolvedAt }}ongoing{{ end }}">{{ fmtDuration .DurationS }}</span>
+      </div>
+      {{ end }}
+    </div>
+    {{ else }}
+    <div class="empty">No incidents recorded.</div>
+    {{ end }}
+  </div>
+
+  <footer>meetify-monitor &middot; refreshes every 60s</footer>
+</div>
+</body>
+</html>
