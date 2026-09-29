@@ -1,3 +1,4 @@
 data/
 .env
 monitor
+deploy.sh

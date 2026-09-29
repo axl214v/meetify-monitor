@@ -4,7 +4,7 @@ services:
     container_name: meetify-monitor
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "${HOST_BIND:-0.0.0.0}:${HOST_PORT:-8080}:8080"
     volumes:
       - monitor-data:/app/data
     env_file: .env
