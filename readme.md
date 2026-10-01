@@ -4,6 +4,7 @@
 
   <p>
     <a href="https://meetify.cc">meetify.cc</a> &nbsp;·&nbsp;
+    <a href="https://health.meetify.cc">Live Status</a> &nbsp;·&nbsp;
     <a href="https://github.com/axl214v/Meetify">Meetify</a> &nbsp;·&nbsp;
     <a href="CHANGELOG.md">Changelog</a>
   </p>
@@ -24,6 +25,8 @@ and serves a public status page — current state, 24h/7d/30d uptime, a
 It is deliberately decoupled from the Meetify stack — meant to run on a
 separate host so it keeps reporting status even if the Meetify server, or
 the machine it runs on, goes down entirely.
+
+The live instance tracking meetify.cc is at **[health.meetify.cc](https://health.meetify.cc)**.
 
 ## Features
 
