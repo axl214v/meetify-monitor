@@ -12,6 +12,7 @@ type Config struct {
 	DBPath       string
 	Port         string
 	SiteName     string
+	SiteURL      string
 }
 
 func loadConfig() Config {
@@ -25,6 +26,7 @@ func loadConfig() Config {
 		DBPath:       env("DB_PATH", "./data/monitor.db"),
 		Port:         env("PORT", "8080"),
 		SiteName:     env("SITE_NAME", "Meetify"),
+		SiteURL:      env("SITE_URL", ""),
 	}
 }
 

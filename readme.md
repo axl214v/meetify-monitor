@@ -57,6 +57,7 @@ Open **http://localhost:8080**.
 | `TARGET_URL` | `http://localhost:3000/api/health` | Endpoint to poll |
 | `POLL_INTERVAL` | `30` | Seconds between checks (minimum 10) |
 | `SITE_NAME` | `Meetify` | Display name on the status page |
+| `SITE_URL` | _(empty)_ | Optional link to the main site, shown in the footer |
 | `PORT` | `8080` | HTTP listen port |
 | `DB_PATH` | `./data/monitor.db` | SQLite file path |
 

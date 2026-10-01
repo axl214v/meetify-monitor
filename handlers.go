@@ -12,6 +12,11 @@ type pageData struct {
 	IsUp        bool
 	LastChecked time.Time
 	ResponseMs  int
+	HTTPCode    int
+	UpSince     time.Time
+	Resp        ResponseStats
+	Spark       Spark
+	SiteURL     string
 	UptimeStats []UptimeStat
 	DailyStatus []DayStatus
 	Incidents   []Incident
@@ -24,8 +29,14 @@ func handleIndex(db *sql.DB, cfg Config) http.HandlerFunc {
 			return
 		}
 		cur := currentStatus(db)
+		resp, spark := responseTimes(db)
 		data := pageData{
 			SiteName:    cfg.SiteName,
+			SiteURL:     cfg.SiteURL,
+			HTTPCode:    cur.HTTPCode,
+			UpSince:     upSince(db),
+			Resp:        resp,
+			Spark:       spark,
 			IsUp:        cur.Status == "up",
 			LastChecked: cur.CheckedAt,
 			ResponseMs:  cur.ResponseMs,
@@ -45,6 +56,8 @@ type apiStatus struct {
 	Status      string    `json:"status"`
 	LastChecked time.Time `json:"last_checked"`
 	ResponseMs  int       `json:"response_ms"`
+	AvgMs24h    int       `json:"avg_response_ms_24h"`
+	P95Ms24h    int       `json:"p95_response_ms_24h"`
 	UptimePct   struct {
 		H24 float64 `json:"24h"`
 		D7  float64 `json:"7d"`
@@ -56,11 +69,14 @@ func handleAPIStatus(db *sql.DB, _ Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cur := currentStatus(db)
 		stats := uptimeStats(db)
+		rt, _ := responseTimes(db)
 
 		resp := apiStatus{
 			Status:      cur.Status,
 			LastChecked: cur.CheckedAt,
 			ResponseMs:  cur.ResponseMs,
+			AvgMs24h:    rt.AvgMs,
+			P95Ms24h:    rt.P95Ms,
 		}
 		if len(stats) == 3 {
 			resp.UptimePct.H24 = stats[0].Pct

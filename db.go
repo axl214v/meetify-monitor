@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -78,6 +80,7 @@ func recordCheck(db *sql.DB, status string, responseMs, httpCode int) error {
 type Check struct {
 	Status     string
 	ResponseMs int
+	HTTPCode   int
 	CheckedAt  time.Time
 }
 
@@ -85,8 +88,8 @@ func currentStatus(db *sql.DB) Check {
 	var c Check
 	var at string
 	db.QueryRow(
-		`SELECT status, response_ms, checked_at FROM checks ORDER BY checked_at DESC LIMIT 1`,
-	).Scan(&c.Status, &c.ResponseMs, &at)
+		`SELECT status, COALESCE(response_ms, 0), COALESCE(http_code, 0), checked_at FROM checks ORDER BY checked_at DESC LIMIT 1`,
+	).Scan(&c.Status, &c.ResponseMs, &c.HTTPCode, &at)
 	c.CheckedAt, _ = time.Parse(time.RFC3339, at)
 	return c
 }
@@ -121,10 +124,22 @@ func uptimeStats(db *sql.DB) []UptimeStat {
 }
 
 type DayStatus struct {
-	Date     string // YYYY-MM-DD
-	HasData  bool
-	AllUp    bool
-	HasIssue bool
+	Date  string // YYYY-MM-DD
+	Pct   float64
+	State string // "up", "partial", "down" or "" when there is no data
+}
+
+// dayState maps a day's uptime to a timeline colour: 100% is up,
+// 95% and above is a partial degradation, anything lower is down.
+func dayState(pct float64) string {
+	switch {
+	case pct >= 100:
+		return "up"
+	case pct >= 95:
+		return "partial"
+	default:
+		return "down"
+	}
 }
 
 func dailyStatus(db *sql.DB) []DayStatus {
@@ -145,12 +160,8 @@ func dailyStatus(db *sql.DB) []DayStatus {
 		var day string
 		var total, upCount int
 		rows.Scan(&day, &total, &upCount)
-		byDay[day] = DayStatus{
-			Date:     day,
-			HasData:  true,
-			AllUp:    upCount == total,
-			HasIssue: upCount < total,
-		}
+		pct := float64(upCount) / float64(total) * 100
+		byDay[day] = DayStatus{Date: day, Pct: pct, State: dayState(pct)}
 	}
 
 	result := make([]DayStatus, 90)
@@ -169,11 +180,14 @@ type Incident struct {
 	StartedAt  time.Time
 	ResolvedAt *time.Time
 	DurationS  *int
+	HTTPCode   int // code of the first failed check, 0 if unknown
 }
 
 func recentIncidents(db *sql.DB, limit int) []Incident {
 	rows, err := db.Query(
-		`SELECT started_at, resolved_at, duration_s FROM incidents ORDER BY started_at DESC LIMIT ?`,
+		`SELECT started_at, resolved_at, duration_s,
+		        COALESCE((SELECT http_code FROM checks WHERE checked_at = incidents.started_at LIMIT 1), 0)
+		 FROM incidents ORDER BY started_at DESC LIMIT ?`,
 		limit,
 	)
 	if err != nil {
@@ -187,7 +201,7 @@ func recentIncidents(db *sql.DB, limit int) []Incident {
 		var startedAt string
 		var resolvedAt sql.NullString
 		var durationS sql.NullInt64
-		rows.Scan(&startedAt, &resolvedAt, &durationS)
+		rows.Scan(&startedAt, &resolvedAt, &durationS, &inc.HTTPCode)
 		inc.StartedAt, _ = time.Parse(time.RFC3339, startedAt)
 		if resolvedAt.Valid {
 			t, _ := time.Parse(time.RFC3339, resolvedAt.String)
@@ -200,4 +214,123 @@ func recentIncidents(db *sql.DB, limit int) []Incident {
 		out = append(out, inc)
 	}
 	return out
+}
+
+// ── response times ───────────────────────────────────────────────────────────
+
+type ResponseStats struct {
+	AvgMs int
+	P95Ms int
+}
+
+type Spark struct {
+	Line  string    // polyline points
+	Area  string    // polygon points (line closed down to the baseline)
+	Down  []float64 // x positions of buckets that contained failed checks
+	MaxMs int
+	Width int
+	High  int
+}
+
+const (
+	sparkBuckets = 48 // 30-minute buckets over 24h
+	sparkW       = 480
+	sparkH       = 60
+)
+
+// responseTimes returns avg/p95 response time and a sparkline for the last 24h.
+func responseTimes(db *sql.DB) (ResponseStats, Spark) {
+	spark := Spark{Width: sparkW, High: sparkH}
+	cutoff := time.Now().UTC().Add(-24 * time.Hour)
+	rows, err := db.Query(
+		`SELECT checked_at, status, COALESCE(response_ms, 0) FROM checks WHERE checked_at >= ? ORDER BY checked_at`,
+		cutoff.Format(time.RFC3339),
+	)
+	if err != nil {
+		return ResponseStats{}, spark
+	}
+	defer rows.Close()
+
+	var all []int
+	var sum [sparkBuckets]int
+	var cnt [sparkBuckets]int
+	var down [sparkBuckets]bool
+	bucketLen := 24 * time.Hour / sparkBuckets
+	for rows.Next() {
+		var at, status string
+		var ms int
+		rows.Scan(&at, &status, &ms)
+		t, err := time.Parse(time.RFC3339, at)
+		if err != nil {
+			continue
+		}
+		b := int(t.Sub(cutoff) / bucketLen)
+		if b < 0 || b >= sparkBuckets {
+			continue
+		}
+		if status != "up" {
+			down[b] = true
+			continue
+		}
+		all = append(all, ms)
+		sum[b] += ms
+		cnt[b]++
+	}
+
+	var stats ResponseStats
+	if len(all) > 0 {
+		total := 0
+		for _, v := range all {
+			total += v
+		}
+		stats.AvgMs = total / len(all)
+		sort.Ints(all)
+		stats.P95Ms = all[(len(all)*95+99)/100-1]
+	}
+
+	for b := 0; b < sparkBuckets; b++ {
+		if cnt[b] > 0 {
+			if avg := sum[b] / cnt[b]; avg > spark.MaxMs {
+				spark.MaxMs = avg
+			}
+		}
+	}
+	if spark.MaxMs == 0 {
+		spark.MaxMs = 1
+	}
+	step := float64(sparkW) / float64(sparkBuckets-1)
+	var line []string
+	var firstX, lastX float64
+	for b := 0; b < sparkBuckets; b++ {
+		x := float64(b) * step
+		if down[b] {
+			spark.Down = append(spark.Down, x)
+		}
+		if cnt[b] == 0 {
+			continue
+		}
+		y := float64(sparkH-4) - float64(sum[b]/cnt[b])/float64(spark.MaxMs)*float64(sparkH-8)
+		if len(line) == 0 {
+			firstX = x
+		}
+		lastX = x
+		line = append(line, fmt.Sprintf("%.1f,%.1f", x, y))
+	}
+	if len(line) >= 2 {
+		spark.Line = strings.Join(line, " ")
+		spark.Area = fmt.Sprintf("%s %.1f,%d %.1f,%d", spark.Line, lastX, sparkH, firstX, sparkH)
+	}
+	return stats, spark
+}
+
+// upSince returns when the current uninterrupted up streak began: the end of
+// the last incident, or the very first check if there has never been one.
+func upSince(db *sql.DB) time.Time {
+	var s sql.NullString
+	db.QueryRow(`SELECT MAX(resolved_at) FROM incidents`).Scan(&s)
+	if !s.Valid {
+		db.QueryRow(`SELECT MIN(checked_at) FROM checks`).Scan(&s)
+	}
+	t, _ := time.Parse(time.RFC3339, s.String)
+	return t
 }
