@@ -62,6 +62,7 @@ Open **http://localhost:8080**.
 | `PORT` | `8080` | HTTP listen port |
 | `DB_PATH` | `./data/monitor.db` | SQLite file path |
 | `ADMIN_TOKEN` | _(empty)_ | Token for the maintenance admin API/page; only used by builds with `-tags admin` |
+| `TRUSTED_PROXIES` | _(empty)_ | Admin build only: extra proxy CIDRs (comma-separated) whose `CF-Connecting-IP` is trusted; Cloudflare ranges are built in |
 
 ## Technology Stack
 
@@ -84,6 +85,14 @@ HTTP server
   → GET /api/status    current status + uptime % (JSON)
   → GET /api/maintenances  active + upcoming maintenance windows (JSON)
 ```
+
+### Behind Cloudflare
+
+When proxied through Cloudflare, use SSL/TLS mode **Full (strict)** and restrict the
+origin port to [Cloudflare's IP ranges](https://www.cloudflare.com/ips/) (or bind it to
+`127.0.0.1` via `HOST_BIND`). The client IP used for admin rate limiting is taken from
+`CF-Connecting-IP` only when the request comes from a Cloudflare address, so it can't be
+spoofed by hitting the origin directly.
 
 Run it behind your own reverse proxy (Nginx, Caddy, Cloudflare) for TLS and
 to put it on a subdomain like `health.meetify.cc`.
