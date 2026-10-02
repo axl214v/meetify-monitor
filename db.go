@@ -39,6 +39,12 @@ func migrate(db *sql.DB) error {
 			resolved_at TEXT,
 			duration_s  INTEGER
 		);
+		CREATE TABLE IF NOT EXISTS maintenances (
+			id        INTEGER PRIMARY KEY AUTOINCREMENT,
+			title     TEXT NOT NULL,
+			starts_at TEXT NOT NULL,
+			ends_at   TEXT NOT NULL
+		);
 		CREATE INDEX IF NOT EXISTS idx_checks_at ON checks(checked_at);
 	`)
 	return err
@@ -47,11 +53,20 @@ func migrate(db *sql.DB) error {
 func recordCheck(db *sql.DB, status string, responseMs, httpCode int) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 
+	// A failure inside a maintenance window is expected, not an outage.
+	if status == "down" && activeMaintenance(db) != nil {
+		status = "maintenance"
+	}
+
 	if _, err := db.Exec(
 		`INSERT INTO checks (checked_at, status, response_ms, http_code) VALUES (?, ?, ?, ?)`,
 		now, status, responseMs, httpCode,
 	); err != nil {
 		return err
+	}
+
+	if status == "maintenance" {
+		return nil
 	}
 
 	if status == "down" {
@@ -111,7 +126,7 @@ func uptimeStats(db *sql.DB) []UptimeStat {
 		var total, up int
 		db.QueryRow(
 			`SELECT COUNT(*), COALESCE(SUM(CASE WHEN status='up' THEN 1 ELSE 0 END), 0)
-			 FROM checks WHERE checked_at >= datetime('now', ?)`,
+			 FROM checks WHERE status != 'maintenance' AND checked_at >= datetime('now', ?)`,
 			fmt.Sprintf("-%d days", p.days),
 		).Scan(&total, &up)
 		pct := 100.0
@@ -126,7 +141,8 @@ func uptimeStats(db *sql.DB) []UptimeStat {
 type DayStatus struct {
 	Date  string // YYYY-MM-DD
 	Pct   float64
-	State string // "up", "partial", "down" or "" when there is no data
+	State string // "up", "partial", "down", "maint" or "" when there is no data
+	Maint bool   // the day contained maintenance checks
 }
 
 // dayState maps a day's uptime to a timeline colour: 100% is up,
@@ -146,7 +162,8 @@ func dailyStatus(db *sql.DB) []DayStatus {
 	rows, err := db.Query(`
 		SELECT date(checked_at) AS day,
 		       COUNT(*) AS total,
-		       SUM(CASE WHEN status='up' THEN 1 ELSE 0 END) AS up_count
+		       SUM(CASE WHEN status='up' THEN 1 ELSE 0 END) AS up_count,
+		       SUM(CASE WHEN status='maintenance' THEN 1 ELSE 0 END) AS maint_count
 		FROM checks
 		WHERE checked_at >= datetime('now', '-90 days')
 		GROUP BY day`)
@@ -158,10 +175,15 @@ func dailyStatus(db *sql.DB) []DayStatus {
 	byDay := map[string]DayStatus{}
 	for rows.Next() {
 		var day string
-		var total, upCount int
-		rows.Scan(&day, &total, &upCount)
-		pct := float64(upCount) / float64(total) * 100
-		byDay[day] = DayStatus{Date: day, Pct: pct, State: dayState(pct)}
+		var total, upCount, maintCount int
+		rows.Scan(&day, &total, &upCount, &maintCount)
+		// Maintenance checks don't count against the day's uptime.
+		if counted := total - maintCount; counted > 0 {
+			pct := float64(upCount) / float64(counted) * 100
+			byDay[day] = DayStatus{Date: day, Pct: pct, State: dayState(pct), Maint: maintCount > 0}
+		} else {
+			byDay[day] = DayStatus{Date: day, Pct: 100, State: "maint", Maint: true}
+		}
 	}
 
 	result := make([]DayStatus, 90)
@@ -268,6 +290,9 @@ func responseTimes(db *sql.DB) (ResponseStats, Spark) {
 		if b < 0 || b >= sparkBuckets {
 			continue
 		}
+		if status == "maintenance" {
+			continue
+		}
 		if status != "up" {
 			down[b] = true
 			continue
@@ -333,4 +358,84 @@ func upSince(db *sql.DB) time.Time {
 	}
 	t, _ := time.Parse(time.RFC3339, s.String)
 	return t
+}
+
+// ── maintenance windows ──────────────────────────────────────────────────────
+
+type Maintenance struct {
+	ID       int64     `json:"id"`
+	Title    string    `json:"title"`
+	StartsAt time.Time `json:"starts_at"`
+	EndsAt   time.Time `json:"ends_at"`
+}
+
+func (m Maintenance) Active() bool {
+	now := time.Now()
+	return !now.Before(m.StartsAt) && now.Before(m.EndsAt)
+}
+
+func addMaintenance(db *sql.DB, title string, start, end time.Time) (Maintenance, error) {
+	m := Maintenance{Title: title, StartsAt: start.UTC(), EndsAt: end.UTC()}
+	res, err := db.Exec(
+		`INSERT INTO maintenances (title, starts_at, ends_at) VALUES (?, ?, ?)`,
+		title, m.StartsAt.Format(time.RFC3339), m.EndsAt.Format(time.RFC3339),
+	)
+	if err != nil {
+		return m, err
+	}
+	m.ID, _ = res.LastInsertId()
+	return m, nil
+}
+
+func deleteMaintenance(db *sql.DB, id int64) (bool, error) {
+	res, err := db.Exec(`DELETE FROM maintenances WHERE id = ?`, id)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+func queryMaintenances(db *sql.DB, query string, args ...any) []Maintenance {
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []Maintenance
+	for rows.Next() {
+		var m Maintenance
+		var s, e string
+		rows.Scan(&m.ID, &m.Title, &s, &e)
+		m.StartsAt, _ = time.Parse(time.RFC3339, s)
+		m.EndsAt, _ = time.Parse(time.RFC3339, e)
+		out = append(out, m)
+	}
+	return out
+}
+
+// upcomingMaintenances returns active and future windows, soonest first.
+func upcomingMaintenances(db *sql.DB) []Maintenance {
+	return queryMaintenances(db,
+		`SELECT id, title, starts_at, ends_at FROM maintenances WHERE ends_at > ? ORDER BY starts_at`,
+		time.Now().UTC().Format(time.RFC3339))
+}
+
+// pastMaintenances returns the most recently finished windows.
+func pastMaintenances(db *sql.DB, limit int) []Maintenance {
+	return queryMaintenances(db,
+		`SELECT id, title, starts_at, ends_at FROM maintenances WHERE ends_at <= ? ORDER BY ends_at DESC LIMIT ?`,
+		time.Now().UTC().Format(time.RFC3339), limit)
+}
+
+// activeMaintenance returns the window in progress right now, or nil.
+func activeMaintenance(db *sql.DB) *Maintenance {
+	now := time.Now().UTC().Format(time.RFC3339)
+	ms := queryMaintenances(db,
+		`SELECT id, title, starts_at, ends_at FROM maintenances WHERE starts_at <= ? AND ends_at > ? ORDER BY ends_at DESC LIMIT 1`,
+		now, now)
+	if len(ms) == 0 {
+		return nil
+	}
+	return &ms[0]
 }

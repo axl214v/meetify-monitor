@@ -13,6 +13,7 @@ type Config struct {
 	Port         string
 	SiteName     string
 	SiteURL      string
+	AdminToken   string // enables the maintenance admin API (admin build only)
 }
 
 func loadConfig() Config {
@@ -27,6 +28,7 @@ func loadConfig() Config {
 		Port:         env("PORT", "8080"),
 		SiteName:     env("SITE_NAME", "Meetify"),
 		SiteURL:      env("SITE_URL", ""),
+		AdminToken:   env("ADMIN_TOKEN", ""),
 	}
 }
 

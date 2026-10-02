@@ -48,6 +48,8 @@ func main() {
 	})
 	mux.HandleFunc("/", handleIndex(db, cfg))
 	mux.HandleFunc("/api/status", handleAPIStatus(db, cfg))
+	mux.HandleFunc("GET /api/maintenances", handleAPIMaintenances(db, cfg))
+	registerAdmin(mux, db, cfg)
 
 	log.Printf("meetify-monitor listening on :%s -> polling %s every %s", cfg.Port, cfg.TargetURL, cfg.PollInterval)
 	log.Fatal(http.ListenAndServe(":"+cfg.Port, mux))
