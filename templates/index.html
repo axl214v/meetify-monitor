@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="/static/logo-mark.png">
 <meta property="og:type" content="website">
 <meta property="og:title" content="{{ .SiteName }} Status">
-<meta property="og:description" content="{{ if .IsUp }}All systems operational{{ else }}Service disruption{{ end }} · live uptime and incident history.">
+<meta property="og:description" content="{{ if .Maint }}Scheduled maintenance{{ else if .IsUp }}All systems operational{{ else }}Service disruption{{ end }} · live uptime and incident history.">
 <meta property="og:image" content="/static/logo-mark.png">
 <script>
   try {
@@ -32,6 +32,7 @@
     --green:   #22c55e;
     --yellow:  #eab308;
     --red:     #ef4444;
+    --blue:    #3b82f6;
     --gray:    #1c2c45;
   }
   :root[data-theme="light"] {
@@ -45,6 +46,7 @@
     --green:   #16a34a;
     --yellow:  #ca8a04;
     --red:     #dc2626;
+    --blue:    #2563eb;
     --gray:    #d5deee;
   }
   @media (prefers-color-scheme: light) {
@@ -59,6 +61,7 @@
       --green:   #16a34a;
       --yellow:  #ca8a04;
       --red:     #dc2626;
+      --blue:    #2563eb;
       --gray:    #d5deee;
     }
   }
@@ -97,9 +100,11 @@
   }
   .status-up   .status-dot { background: var(--green); box-shadow: 0 0 12px var(--green); }
   .status-down .status-dot { background: var(--red);   box-shadow: 0 0 12px var(--red); }
+  .status-maint .status-dot { background: var(--blue); box-shadow: 0 0 12px var(--blue); }
   .status-text { font-size: 20px; font-weight: 600; }
   .status-up   .status-text { color: var(--green); }
   .status-down .status-text { color: var(--red); }
+  .status-maint .status-text { color: var(--blue); }
   .status-meta { margin-top: 8px; font-size: 13px; color: var(--text-2); }
   .status-facts {
     display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 24px;
@@ -146,6 +151,7 @@
   .timeline .day.up      { background: var(--green); }
   .timeline .day.partial { background: var(--yellow); }
   .timeline .day.down    { background: var(--red); }
+  .timeline .day.maint   { background: var(--blue); }
   .timeline-labels {
     display: flex; justify-content: space-between;
     font-size: 11px; color: var(--text-2); margin-top: 6px;
@@ -167,6 +173,18 @@
   .incident .dur { color: var(--text-2); font-family: monospace; }
   .incident .dur.ongoing { color: var(--red); font-weight: 600; }
   .incident .code { display: block; font-size: 11px; color: var(--text-2); margin-top: 2px; }
+  .maint-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
+  .maint-list h2 { font-size: 13px; color: var(--text-2); font-weight: 500; }
+  .maint {
+    background: var(--surface);
+    border: 1px solid var(--blue);
+    border-radius: 10px;
+    padding: 12px 16px;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    font-size: 13px;
+  }
+  .maint small { display: block; color: var(--text-2); font-size: 12px; margin-top: 2px; }
+  .maint .tag { color: var(--blue); font-size: 12px; font-weight: 600; white-space: nowrap; }
   .empty { text-align: center; color: var(--text-2); font-size: 13px; padding: 24px 0; }
 
   footer { text-align: center; margin-top: 32px; font-size: 11px; color: var(--text-2); }
@@ -191,7 +209,7 @@
     .status-card { padding: 22px 16px; }
     .uptime-box { padding: 12px 6px; }
     .uptime-box .pct { font-size: 18px; }
-    .incident { flex-direction: column; align-items: flex-start; }
+    .incident, .maint { flex-direction: column; align-items: flex-start; }
     .incident .right { text-align: left; }
   }
 </style>
@@ -207,18 +225,31 @@
     <h1>{{ .SiteName }} Status</h1>
   </div>
 
-  <div class="status-card {{ if .IsUp }}status-up{{ else }}status-down{{ end }}">
+  <div class="status-card {{ if .Maint }}status-maint{{ else if .IsUp }}status-up{{ else }}status-down{{ end }}">
     <span class="status-dot"></span>
-    <span class="status-text">{{ if .IsUp }}All systems operational{{ else }}Service disruption{{ end }}</span>
+    <span class="status-text">{{ if .Maint }}Scheduled maintenance{{ else if .IsUp }}All systems operational{{ else }}Service disruption{{ end }}</span>
+    {{ if .Maint }}<div class="status-meta">{{ .Maint.Title }} &middot; until {{ fmtTime .Maint.EndsAt }}</div>{{ end }}
     <div class="status-meta">
       Last checked <span data-ago="{{ unix .LastChecked }}">{{ ago .LastChecked }}</span>
     </div>
     <div class="status-facts">
       <div>Response<b>{{ .ResponseMs }} ms</b></div>
       <div>HTTP code<b>{{ if .HTTPCode }}{{ .HTTPCode }}{{ else }}—{{ end }}</b></div>
-      {{ if .IsUp }}<div>Up for<b>{{ since .UpSince }}</b></div>{{ end }}
+      {{ if and .IsUp (not .Maint) }}<div>Up for<b>{{ since .UpSince }}</b></div>{{ end }}
     </div>
   </div>
+
+  {{ if .Upcoming }}
+  <div class="maint-list">
+    <h2>Maintenance</h2>
+    {{ range .Upcoming }}
+    <div class="maint">
+      <span>{{ .Title }}<small>{{ fmtTime .StartsAt }} &ndash; {{ fmtTime .EndsAt }}</small></span>
+      <span class="tag">{{ if .Active }}In progress{{ else }}Scheduled{{ end }}</span>
+    </div>
+    {{ end }}
+  </div>
+  {{ end }}
 
   <div class="uptime-row">
     {{ range .UptimeStats }}
@@ -258,7 +289,7 @@
     <h2>90-day history</h2>
     <div class="timeline">
       {{ range .DailyStatus }}
-      <div class="day {{ .State }}" title="{{ .Date }}{{ if .State }} · {{ printf "%.2f" .Pct }}% uptime{{ else }} · no data{{ end }}"></div>
+      <div class="day {{ .State }}" title="{{ .Date }}{{ if eq .State "maint" }} · maintenance{{ else if .State }} · {{ printf "%.2f" .Pct }}% uptime{{ if .Maint }} (maintenance excluded){{ end }}{{ else }} · no data{{ end }}"></div>
       {{ end }}
     </div>
     <div class="timeline-labels">
@@ -269,6 +300,7 @@
       <span><i style="background:var(--green)"></i>100%</span>
       <span><i style="background:var(--yellow)"></i>partial (&ge;95%)</span>
       <span><i style="background:var(--red)"></i>outage</span>
+      <span><i style="background:var(--blue)"></i>maintenance</span>
       <span><i style="background:var(--gray)"></i>no data</span>
     </div>
   </div>
