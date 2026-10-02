@@ -126,8 +126,8 @@ func uptimeStats(db *sql.DB) []UptimeStat {
 		var total, up int
 		db.QueryRow(
 			`SELECT COUNT(*), COALESCE(SUM(CASE WHEN status='up' THEN 1 ELSE 0 END), 0)
-			 FROM checks WHERE status != 'maintenance' AND checked_at >= datetime('now', ?)`,
-			fmt.Sprintf("-%d days", p.days),
+			 FROM checks WHERE status != 'maintenance' AND checked_at >= ?`,
+			time.Now().UTC().AddDate(0, 0, -p.days).Format(time.RFC3339),
 		).Scan(&total, &up)
 		pct := 100.0
 		if total > 0 {
@@ -165,8 +165,8 @@ func dailyStatus(db *sql.DB) []DayStatus {
 		       SUM(CASE WHEN status='up' THEN 1 ELSE 0 END) AS up_count,
 		       SUM(CASE WHEN status='maintenance' THEN 1 ELSE 0 END) AS maint_count
 		FROM checks
-		WHERE checked_at >= datetime('now', '-90 days')
-		GROUP BY day`)
+		WHERE checked_at >= ?
+		GROUP BY day`, time.Now().UTC().AddDate(0, 0, -90).Format(time.RFC3339))
 	if err != nil {
 		return nil
 	}
