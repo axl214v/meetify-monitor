@@ -2,3 +2,6 @@ data/
 .env
 monitor
 deploy.sh
+# private admin (maintenance management) — built with -tags admin
+admin.go
+templates/admin.html

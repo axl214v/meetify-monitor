@@ -3,7 +3,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o monitor .
+RUN CGO_ENABLED=0 go build -tags admin -ldflags="-s -w" -o monitor .
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata
