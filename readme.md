@@ -34,6 +34,7 @@ The live instance tracking meetify.cc is at **[health.meetify.cc](https://health
 - SQLite storage (pure Go, no CGO) — single binary, single-file DB
 - Status page styled to match Meetify's design system
 - `GET /api/status` JSON endpoint for external integrations
+- Scheduled maintenance windows — planned downtime is shown as maintenance, not as an outage
 - Single static binary, small Docker image, no external dependencies
 
 ## Self-Hosting
@@ -60,6 +61,7 @@ Open **http://localhost:8080**.
 | `SITE_URL` | _(empty)_ | Optional link to the main site, shown in the footer |
 | `PORT` | `8080` | HTTP listen port |
 | `DB_PATH` | `./data/monitor.db` | SQLite file path |
+| `ADMIN_TOKEN` | _(empty)_ | Token for the maintenance admin API/page; only used by builds with `-tags admin` |
 
 ## Technology Stack
 
@@ -80,6 +82,7 @@ poller (goroutine, every N seconds)
 HTTP server
   → GET /              status page (HTML)
   → GET /api/status    current status + uptime % (JSON)
+  → GET /api/maintenances  active + upcoming maintenance windows (JSON)
 ```
 
 Run it behind your own reverse proxy (Nginx, Caddy, Cloudflare) for TLS and
