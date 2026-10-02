@@ -52,7 +52,15 @@ func main() {
 	registerAdmin(mux, db, cfg)
 
 	log.Printf("meetify-monitor listening on :%s -> polling %s every %s", cfg.Port, cfg.TargetURL, cfg.PollInterval)
-	log.Fatal(http.ListenAndServe(":"+cfg.Port, mux))
+	srv := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	log.Fatal(srv.ListenAndServe())
 }
 
 func cacheStatic(h http.Handler) http.Handler {
