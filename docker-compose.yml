@@ -3,8 +3,12 @@ services:
     build: .
     container_name: meetify-monitor
     restart: unless-stopped
+    # With DOMAIN set the app terminates TLS itself (80 = ACME + redirect, 443 = HTTPS).
+    # Without it, it serves plain HTTP on 8080 (local use / behind your own proxy).
     ports:
       - "${HOST_BIND:-0.0.0.0}:${HOST_PORT:-8080}:8080"
+      - "80:80"
+      - "443:443"
     volumes:
       - monitor-data:/app/data
     env_file: .env
