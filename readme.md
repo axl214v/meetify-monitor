@@ -60,6 +60,9 @@ Open **http://localhost:8080**.
 | `SITE_NAME` | `Meetify` | Display name on the status page |
 | `SITE_URL` | _(empty)_ | Optional link to the main site, shown in the footer |
 | `PORT` | `8080` | HTTP listen port |
+| `DOMAIN` | _(empty)_ | Public hostname; when set, serves HTTPS on :443 with an auto-renewed Let's Encrypt certificate (ports 80 and 443 must be reachable) |
+| `ACME_EMAIL` | _(empty)_ | Optional contact for Let's Encrypt expiry notices |
+| `CERT_DIR` | `<DB dir>/certs` | Certificate cache; keep it on the persistent volume |
 | `DB_PATH` | `./data/monitor.db` | SQLite file path |
 | `ADMIN_TOKEN` | _(empty)_ | Token for the maintenance admin API/page; only used by builds with `-tags admin` |
 | `TRUSTED_PROXIES` | _(empty)_ | Admin build only: extra proxy CIDRs (comma-separated) whose `CF-Connecting-IP` is trusted; Cloudflare ranges are built in |
@@ -85,6 +88,13 @@ HTTP server
   → GET /api/status    current status + uptime % (JSON)
   → GET /api/maintenances  active + upcoming maintenance windows (JSON)
 ```
+
+### Built-in HTTPS
+
+Set `DOMAIN=health.example.com` in `.env` (DNS pointing at the host) and `docker compose up -d --build`.
+The app obtains a Let's Encrypt certificate on first request, renews it automatically, serves
+HTTPS on `:443` and redirects `:80` to it — no extra proxy container. Certificates are cached
+in the `monitor-data` volume, so restarts don't re-issue them.
 
 ### Behind Cloudflare
 
