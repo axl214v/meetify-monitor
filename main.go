@@ -51,16 +51,23 @@ func main() {
 	mux.HandleFunc("GET /api/maintenances", handleAPIMaintenances(db, cfg))
 	registerAdmin(mux, db, cfg)
 
+	if cfg.Domain != "" {
+		log.Fatal(serveHTTPS(mux, cfg))
+	}
+
 	log.Printf("meetify-monitor listening on :%s -> polling %s every %s", cfg.Port, cfg.TargetURL, cfg.PollInterval)
-	srv := &http.Server{
-		Addr:              ":" + cfg.Port,
-		Handler:           mux,
+	log.Fatal(newServer(":"+cfg.Port, mux).ListenAndServe())
+}
+
+func newServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           h,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
-	log.Fatal(srv.ListenAndServe())
 }
 
 func cacheStatic(h http.Handler) http.Handler {
