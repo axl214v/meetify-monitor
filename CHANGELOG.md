@@ -8,6 +8,9 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Fixed
+- A failed check is retried (3 attempts, 3s apart, a fresh connection each) before it is recorded as down; single connection resets and timeouts no longer open one-poll incidents.
+
 ### Added
 - Scheduled maintenance windows: failed checks inside a window are recorded as `maintenance` (no incident, excluded from uptime), the page shows a maintenance banner, upcoming windows and blue days in the history. `GET /api/maintenances`, `status: "maintenance"` in `/api/status`.
 - Optional private admin build (`-tags admin`, `ADMIN_TOKEN`) for managing windows; the public build ships a no-op `registerAdmin`.
