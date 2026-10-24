@@ -8,6 +8,9 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Changed
+- Default `POLL_INTERVAL` is 60s (was 30s).
+
 ### Fixed
 - A failed check is retried (3 attempts, 3s apart, a fresh connection each) before it is recorded as down; single connection resets and timeouts no longer open one-poll incidents.
 

@@ -22,7 +22,7 @@ type Config struct {
 
 func loadConfig() Config {
 	dbPath := env("DB_PATH", "./data/monitor.db")
-	secs, _ := strconv.Atoi(env("POLL_INTERVAL", "30"))
+	secs, _ := strconv.Atoi(env("POLL_INTERVAL", "60"))
 	if secs < 10 {
 		secs = 10
 	}
