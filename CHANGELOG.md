@@ -12,7 +12,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 - Default `POLL_INTERVAL` is 60s (was 30s).
 
 ### Fixed
-- A failed check is retried (3 attempts, 3s apart, a fresh connection each) before it is recorded as down; single connection resets and timeouts no longer open one-poll incidents.
+- A failed check is retried (3 attempts, 3s apart, idle connections dropped before each retry) before it is recorded as down; single connection resets and timeouts no longer open one-poll incidents.
 
 ### Added
 - Scheduled maintenance windows: failed checks inside a window are recorded as `maintenance` (no incident, excluded from uptime), the page shows a maintenance banner, upcoming windows and blue days in the history. `GET /api/maintenances`, `status: "maintenance"` in `/api/status`.

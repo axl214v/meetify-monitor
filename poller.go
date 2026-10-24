@@ -15,11 +15,8 @@ const (
 )
 
 func runPoller(db *sql.DB, cfg Config) {
-	// Fresh connection per attempt: a retry must not reuse the connection that just failed.
-	client := &http.Client{
-		Timeout:   10 * time.Second,
-		Transport: &http.Transport{DisableKeepAlives: true, Proxy: http.ProxyFromEnvironment},
-	}
+	// Keep-alive stays on so the response time is the request itself, not TCP+TLS every poll.
+	client := &http.Client{Timeout: 10 * time.Second}
 
 	probe := func() (status string, code, elapsed int, err error) {
 		start := time.Now()
@@ -53,6 +50,7 @@ func runPoller(db *sql.DB, cfg Config) {
 				log.Printf("poll FAIL  attempt=%d/%d %d  %dms", attempt, checkAttempts, code, elapsed)
 			}
 			if attempt < checkAttempts {
+				client.CloseIdleConnections() // a retry must not reuse the connection that just failed
 				time.Sleep(retryDelay)
 			}
 		}
