@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 )
@@ -51,7 +52,9 @@ func handleIndex(db *sql.DB, cfg Config) http.HandlerFunc {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		if err := tmpl.Execute(w, data); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			// Headers are already sent, so an error status is no longer possible;
+			// this is usually the client closing the connection mid-page.
+			log.Printf("render index: %v", err)
 		}
 	}
 }
